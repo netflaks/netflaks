@@ -1,0 +1,39 @@
+# test-braket-oidc.sh
+set -euo pipefail
+
+WF_NAME="braket-demo"
+WF_FILE=".github/workflows/braket-demo.yml"
+REPO="netflaks/netflaks"
+
+need() { command -v "$1" >/dev/null || { echo "❌ Missing $1"; exit 1; }; }
+
+echo "🔎 Checking prerequisites..."
+need gh
+need jq
+
+echo "📂 Ensuring repo is correct..."
+gh repo view "$REPO" >/dev/null
+
+echo "📄 Checking workflow file..."
+if ! gh workflow list | grep -q "$WF_NAME"; then
+  echo "❌ Workflow $WF_NAME not found."
+  echo "   Create $WF_FILE with your Braket demo YAML and commit it first."
+  exit 1
+fi
+
+echo "🚀 Triggering workflow_dispatch..."
+gh workflow run "$WF_NAME" >/dev/null
+
+sleep 5
+RUN_JSON="$(gh run list --workflow "$WF_NAME" --limit 1 --json databaseId,htmlUrl,status,conclusion -q '.[0]')"
+if [ -n "$RUN_JSON" ]; then
+  RUN_ID="$(echo "$RUN_JSON" | jq -r '.databaseId')"
+  RUN_URL="$(echo "$RUN_JSON" | jq -r '.htmlUrl')"
+  echo "🔗 View run: $RUN_URL"
+  echo "▶️ Watching logs (Ctrl+C to stop)..."
+  gh run watch "$RUN_ID" --exit-status || true
+  echo "📜 Final logs:"
+  gh run view "$RUN_ID" --log || true
+else
+  echo "⚠️ Could not fetch run info. Check GitHub Actions tab manually."
+fi
