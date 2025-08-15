@@ -16,8 +16,18 @@ jobs:
           role-to-assume: ${{ vars.GH_BRAKET_ROLE_ARN }}
           aws-region: us-west-2
 
+      - name: Debug env
+        run: |
+          aws --version
+          echo "AWS_REGION=$AWS_REGION"
+
       - name: Verify identity
         run: aws sts get-caller-identity
 
-      - name: List Braket simulators
-        run: aws braket search-devices --filters name=provider,values=amazon name=type,values=SIMULATOR --max-results 3 --region us-west-2
+      - name: Search Braket simulators
+        run: |
+          # Use two --filters flags (more reliable with AWS CLI)
+          aws braket search-devices \
+            --filters name=provider,values=amazon \
+                      name=type,values=SIMULATOR \
+            --max-results 3 --region us-west-2
