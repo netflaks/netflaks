@@ -1,11 +1,6 @@
 name: braket-demo
-on:
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
+on: { workflow_dispatch: {} }
+permissions: { id-token: write, contents: read }
 jobs:
   braket:
     runs-on: ubuntu-latest
@@ -15,26 +10,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.GH_BRAKET_ROLE_ARN }}
           aws-region: us-east-1
-
-      - name: Debug env
-        run: |
-          set -x
-          aws --version
-          aws sts get-caller-identity
-          aws configure list
-
-      - name: Braket smoke (non-fatal, multi-region)
-        run: |
-          set -e
-          ok=false
-          for r in us-east-1 us-west-2 us-west-1; do
-            echo ">>> Trying region: $r"
-            if aws braket search-devices --max-results 1 --region "$r"; then
-              ok=true; break
-            fi
-          done
-          if [ "$ok" = false ]; then
-            echo "Braket query failed in tried regions; continuing."
-          fi
-        shell: bash
-        continue-on-error: true
+      - name: Verify identity
+        run: aws sts get-caller-identity
+      - name: Braket device probe (SV1)
+        run: aws braket get-device --device-arn arn:aws:braket:::device/quantum-simulator/amazon/sv1 --region us-east-1
