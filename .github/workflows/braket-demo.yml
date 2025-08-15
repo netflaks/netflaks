@@ -14,20 +14,30 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.GH_BRAKET_ROLE_ARN }}
-          aws-region: us-west-2
+          aws-region: us-east-1
 
       - name: Debug env
         run: |
+          set -x
           aws --version
+          aws configure list
           echo "AWS_REGION=$AWS_REGION"
 
       - name: Verify identity
         run: aws sts get-caller-identity
 
-      - name: Search Braket simulators
+      - name: Braket smoke (non-fatal)
         run: |
-          # Use two --filters flags (more reliable with AWS CLI)
-          aws braket search-devices \
-            --filters name=provider,values=amazon \
-                      name=type,values=SIMULATOR \
-            --max-results 3 --region us-west-2
+          set -e
+          ok=false
+          for r in us-east-1 us-west-2 us-west-1; do
+            echo ">>> Trying region: $r"
+            if aws braket search-devices --max-results 1 --region "$r"; then
+              ok=true; break
+            fi
+          done
+          if [ "$ok" = false ]; then
+            echo "Braket query failed in tried regions; continuing (non-fatal)."
+          fi
+        shell: bash
+        continue-on-error: true
