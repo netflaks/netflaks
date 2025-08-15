@@ -1,6 +1,11 @@
 name: braket-demo
-on: { workflow_dispatch: {} }
-permissions: { id-token: write, contents: read }
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   braket:
     runs-on: ubuntu-latest
@@ -10,7 +15,62 @@ jobs:
         with:
           role-to-assume: ${{ vars.GH_BRAKET_ROLE_ARN }}
           aws-region: us-east-1
+
       - name: Verify identity
         run: aws sts get-caller-identity
-      - name: Braket device probe (SV1)
-        run: aws braket get-device --device-arn arn:aws:braket:::device/quantum-simulator/amazon/sv1 --region us-east-1
+
+      - name: Submit Bell-state task (SV1)
+        run: |
+          cat > action.json <<'JSON'
+          {
+            "braketSchemaHeader": {"name":"braket.ir.jaqcd.program","version":"1"},
+            "instructions": [
+              {"type":"h","target":["q0"]},
+              {"type":"cnot","control":["q0"],"target":["q1"]}
+            ],
+            "results": [{"type":"sample","observable":["z","z"],"targets":[["q0"],["q1"]]}]
+          }
+          JSON
+          aws braket create-quantum-task \
+            --device-arn arn:aws:braket:::device/quantum-simulator/amazon/sv1 \
+            --action file://action.json \
+            --shots 1000 \
+            --s3-destination-bucket "arn:aws:s3:::${{ vars.RESULTS_BUCKET }}/results/" \
+            --output-format JSON \
+            --region us-east-1 \
+            --query 'quantumTaskArn' --output text > task_arn.txt
+          echo "TASK_ARN=$(cat task_arn.txt)"
+
+      - name: Wait for task completion
+        run: |
+          ARN="$(cat task_arn.txt)"
+          for i in {1..60}; do
+            STATUS=$(aws braket get-quantum-task --quantum-task-arn "$ARN" --region us-east-1 --query 'status' --output text)
+            echo "Status: $STATUS"
+            [ "$STATUS" = "COMPLETED" ] && break
+            [ "$STATUS" = "FAILED" ] && { echo "Task failed"; exit 1; }
+            sleep 5
+          done
+
+      - name: Fetch results
+        run: |
+          ARN="$(cat task_arn.txt)"
+          OUTDIR=$(aws braket get-quantum-task --quantum-task-arn "$ARN" --region us-east-1 --query 'outputS3Directory' -o text)
+          echo "Output S3: s3://$OUTDIR/"
+          aws s3 cp "s3://$OUTDIR/results.json" results.json
+
+      - name: Print + save histogram
+        run: |
+          echo "Histogram (count  bitstring):"
+          jq -r '.results[]? | select(.type=="Sample" or .name=="Sample") | .measurements[] | join("")' results.json \
+            | sort | uniq -c | sort -nr | tee histogram.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: braket-results-${{ github.run_id }}
+          path: |
+            results.json
+            histogram.txt
+          if-no-files-found: error
+          retention-days: 7
