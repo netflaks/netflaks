@@ -20,13 +20,10 @@ jobs:
         run: |
           set -x
           aws --version
+          aws sts get-caller-identity
           aws configure list
-          echo "AWS_REGION=$AWS_REGION"
 
-      - name: Verify identity
-        run: aws sts get-caller-identity
-
-      - name: Braket smoke (non-fatal)
+      - name: Braket smoke (non-fatal, multi-region)
         run: |
           set -e
           ok=false
@@ -37,7 +34,7 @@ jobs:
             fi
           done
           if [ "$ok" = false ]; then
-            echo "Braket query failed in tried regions; continuing (non-fatal)."
+            echo "Braket query failed in tried regions; continuing."
           fi
         shell: bash
         continue-on-error: true
